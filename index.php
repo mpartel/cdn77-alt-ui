@@ -1,5 +1,7 @@
 <?php
 
+error_reporting(E_ALL | E_STRICT);
+
 function myErrorHandler($errno, $errstr, $errfile, $errline, $errcontext) {
     throw new Exception("$errfile:$errline: $errstr", $errno);
 }
@@ -15,48 +17,14 @@ try {
     $historyFile = $settings['history_file'];
     $minTimeBetweenSnapshots = $settings['min_time_between_snapshots'];
 
-    $pdo = new PDO('sqlite:' . $historyFile);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    $tableName = 'cdn77_history';
-
-    $schema = <<<EOS
-        CREATE TABLE $tableName (
-            json_data TEXT,
-            recorded_at INT
-        )
-EOS;
-
-    if ($pdo->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='$tableName'")->fetchColumn() === false) {
-        $pdo->exec($schema);
-    }
-
-    $now = time();
-    $recentSnapshotMinTime = $now - $minTimeBetweenSnapshots;
-
-    $stmt = $pdo->prepare("SELECT json_data FROM $tableName WHERE recorded_at >= ?");
-    $stmt->execute(array($recentSnapshotMinTime));
-    $jsonData = $stmt->fetchColumn();
-    if ($jsonData === false) {
-        $curl = curl_init("https://client.cdn77.com/api/traffic");
-        curl_setopt($curl, CURLOPT_POST, true);
-        curl_setopt($curl, CURLOPT_POSTFIELDS, array('id' => $cdnId, 'login' => $userName, 'passwd' => $apiKey));
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        $jsonData = curl_exec($curl);
-        curl_close($curl);
-        if (empty($jsonData)) { // Sometimes the API indeed returns an empty string
-            throw new Exception("Failed to get data from CDN77.");
-        }
-        $jsonData = trim($jsonData);
-
-        $records = json_decode($jsonData, true); // Parse before inserting to ensure validity
-
-        $stmt = $pdo->prepare("INSERT INTO $tableName (json_data, recorded_at) VALUES (?, ?)");
-        $stmt->execute(array($jsonData, $now));
+    $module = isset($_REQUEST['action']) ? $_REQUEST['action'] : 'stats';
+    
+    $validModules = array('stats');
+    if (in_array($module, $validModules, true)) {
+        require "lib/$module.php";
     } else {
-        $records = json_decode($jsonData, true);
+        throw new Exception('Invalid action parameter');
     }
-
 } catch (Exception $e) {
     $failure = "Error: " . $e->getMessage();
 }
@@ -74,7 +42,7 @@ if (php_sapi_name() == 'cli') {
     if (isset($failure)) {
         echo $failure;
     } else {
-        echo $jsonData;
+        require "lib/$module.txt.php";
     }
     exit;
 }
@@ -90,11 +58,7 @@ if (php_sapi_name() == 'cli') {
     <?php if (isset($failure)): ?>
         <p class="error"><?php echo htmlspecialchars($failure); ?></p>
     <?php else: ?>
-        <ul>
-            <?php foreach ($stats as $key => $title): ?>
-                <li><?php echo htmlspecialchars(ucfirst($title)); ?>: <?php echo htmlspecialchars($records[$key]); ?> </li>
-            <?php endforeach; ?>
-        </ul>
+        <?php require "lib/$module.html.php"; ?>
     <?php endif; ?>
 </body>
 </html>
