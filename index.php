@@ -19,7 +19,7 @@ try {
 
     $module = isset($_REQUEST['action']) ? $_REQUEST['action'] : 'stats';
     
-    $validModules = array('stats');
+    $validModules = array('stats', 'purge');
     if (in_array($module, $validModules, true)) {
         require "lib/$module.php";
     } else {
